@@ -9,12 +9,15 @@ Features:
 - Email notifications
 - Support for exclusion patterns
 Usage: ./backup.py --create --cleanup --project=projectname
+       ./backup.py --list --project=projectname
 """
 
 import os
 import sys
 import argparse
 import shutil
+import datetime
+import re
 
 # Import from tekne-backup library
 from tekne_backup import utils
@@ -26,28 +29,66 @@ from tekne_backup import notification_manager
 # Default configuration file path
 DEFAULT_CONFIG_FILE = "backup-config.yml"
 
+def display_backups(config, project):
+    """Display all backups for a project"""
+    utils.log(f"Listing backups for project: {project}")
+    
+    # Get list of backups
+    backups = r2_client.list_backups_sigv4(config, project)
+    
+    if not backups:
+        utils.log("No backups found.")
+        return
+    
+    utils.log(f"Found {len(backups)} backup(s):")
+    
+    # Calculate max length for formatting
+    max_length = max(len(backup) for backup in backups)
+    
+    # Display each backup with date extracted from name
+    for backup in backups:
+        # Extract date from backup name
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
+        date_str = date_match.group(1) if date_match else "Unknown date"
+        
+        # Generate public URL
+        public_url = r2_client.generate_public_url(config, backup)
+        
+        # Print formatted output
+        print(f"{backup:<{max_length + 2}} {date_str}  {public_url}")
+    
+    utils.log("Listing complete.")
+    return True
+
 def main():
     """Main function"""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Backup script for websites')
     parser.add_argument('--create', action='store_true', help='Create a new backup')
     parser.add_argument('--cleanup', action='store_true', help='Remove old backups')
+    parser.add_argument('--list', action='store_true', help='List all backups for the project')
     parser.add_argument('--project', required=True, help='Project name')
     parser.add_argument('--config', default=DEFAULT_CONFIG_FILE, help='Path to config file')
     
     args = parser.parse_args()
     
     # Check if at least one operation is specified
-    if not args.create and not args.cleanup:
-        utils.log("ERROR: No operation specified (--create or --cleanup)")
+    if not args.create and not args.cleanup and not args.list:
+        utils.log("ERROR: No operation specified (--create, --cleanup, or --list)")
         parser.print_help()
         sys.exit(1)
     
-    # Check required commands
-    utils.check_required_commands()
+    # Check required commands (not needed for list operation)
+    if args.create or args.cleanup:
+        utils.check_required_commands()
     
     # Load configuration
     config = config_loader.load_config(args.config)
+    
+    # List backups if requested
+    if args.list:
+        display_backups(config, args.project)
+        sys.exit(0)
     
     # Create temp directory if needed
     temp_dir = config['settings']['temp_dir']
