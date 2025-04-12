@@ -75,6 +75,15 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
         max_retries: Maximum number of retry attempts (default: 3)
         timeout: Connection and operation timeout in seconds (default: 5 minutes)
     """
+    # Get configuration values for retries and timeout if available
+    if 'r2' in config and 'upload_retries' in config['r2']:
+        max_retries = config['r2']['upload_retries']
+    
+    if 'r2' in config and 'upload_timeout' in config['r2']:
+        timeout = config['r2']['upload_timeout']
+    
+    utils.log(f"Using upload settings: max_retries={max_retries}, timeout={timeout} seconds")
+    
     for attempt in range(1, max_retries + 1):
         try:
             if attempt > 1:
@@ -148,7 +157,7 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
                 '--verbose',           # More detailed output
                 '--max-time', str(timeout),  # Total time limit
                 '--connect-timeout', '60',  # Connection timeout
-                '--retry', '3',        # Retry on transient errors
+                '--retry', str(max_retries),  # Retry on transient errors
                 '--retry-delay', '5',  # Wait between retries
                 '--fail',              # Return error on HTTP errors
                 '-X', method
