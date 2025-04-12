@@ -1,0 +1,57 @@
+# Cloudflare R2 configuration
+r2:
+  endpoint: "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+  access_key: "YOUR_ACCESS_KEY"
+  secret_key: "YOUR_SECRET_KEY"
+  bucket: "your-backup-bucket"
+  # Optional: public domain if you've configured a custom domain for your R2 bucket
+  # public_domain: "backups.example.com"
+
+# Global settings
+settings:
+  # How many days to keep backups (default: 90)
+  retention_days: 90
+  # Temporary directory for processing backups
+  temp_dir: "/tmp/website_backups"
+
+# Projects to backup
+projects:
+  # First project (key is the project identifier used with --project flag)
+  mywordpress:
+    # Database settings
+    db_host: "localhost"
+    db_name: "wp_database"
+    db_user: "db_user"
+    db_pass: "db_password"
+    # Root path of the website files
+    website_path: "/home/user/public_html"
+    # Optional: patterns to exclude (passed to rsync)
+    exclude:
+      - "wp-content/cache/*"
+      - "wp-content/uploads/cache/*"
+      - "*.log"
+      - ".git/"
+      - "node_modules/"
+
+  # Second project example
+  mycraftcms:
+    db_host: "db.example.com"
+    db_name: "craft_db"
+    db_user: "craft_user"
+    db_pass: "craft_password"
+    website_path: "/var/www/craftcms"
+    exclude:
+      - "storage/runtime/*"
+      - "web/cpresources/*"
+      - "vendor/bin/*"
+
+# Optional: Email notification settings
+email:
+  # From address for notification emails
+  from: "backups@example.com"
+  # Recipients list
+  to:
+    - "admin@example.com"
+    - "alerts@example.com"
+  # Optional: Subject prefix (default: [BACKUP])
+  subject_prefix: "[WEBSITE-BACKUP]"
