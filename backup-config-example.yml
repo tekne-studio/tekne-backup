@@ -14,6 +14,8 @@ r2:
 settings:
   # How many days to keep backups (default: 90)
   retention_days: 90
+  # Alternative: specify retention time in seconds for testing (takes precedence over retention_days)
+  # retention_time: 300 # 5 minutes in seconds
   # Temporary directory for processing backups
   temp_dir: "/tmp/website_backups"
 

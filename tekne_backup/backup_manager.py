@@ -149,34 +149,50 @@ def cleanup_backups(config, project):
     """Clean up backups older than retention period"""
     utils.log(f"Cleaning up old backups for project: {project}")
     
-    retention_days = config['settings']['retention_days']
-    cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
+    # Check if retention_time (in seconds) is specified, otherwise use retention_days
+    if 'retention_time' in config['settings']:
+        retention_seconds = config['settings']['retention_time']
+        utils.log(f"Using retention period of {retention_seconds} seconds")
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(seconds=retention_seconds)
+    else:
+        retention_days = config['settings']['retention_days']
+        utils.log(f"Using retention period of {retention_days} days")
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
+    
     cutoff_timestamp = cutoff_date.timestamp()
+    utils.log(f"Cutoff time: {cutoff_date.strftime('%Y-%m-%d--%H-%M')}")
     
     backups = r2_client.list_backups_sigv4(config, project)
     deleted_count = 0
+    skipped_count = 0
     
     for backup in backups:
-        # Extract date from backup filename using regex
-        match = re.search(r'(\d{4}-\d{2}-\d{2})', backup)
+        # Extract full date-time pattern from backup filename using regex
+        match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
         if not match:
+            utils.log(f"Skipping backup with unrecognized format: {backup}")
             continue
         
-        backup_date_str = match.group(1)
+        backup_datetime_str = match.group(1)
         
         try:
-            # Parse date and convert to timestamp
-            backup_date = datetime.datetime.strptime(backup_date_str, "%Y-%m-%d")
-            backup_timestamp = backup_date.timestamp()
+            # Parse full date AND time
+            backup_datetime = datetime.datetime.strptime(backup_datetime_str, "%Y-%m-%d--%H-%M")
+            backup_timestamp = backup_datetime.timestamp()
+            
+            utils.log(f"Checking backup: {backup} (created: {backup_datetime_str})")
             
             # Check if backup is older than retention period
             if backup_timestamp < cutoff_timestamp:
                 utils.log(f"Deleting old backup: {backup}")
                 if r2_client.delete_from_r2_sigv4(config, backup):
                     deleted_count += 1
+            else:
+                utils.log(f"Keeping recent backup: {backup}")
+                skipped_count += 1
         except Exception as e:
-            utils.log(f"WARNING: Failed to parse date from backup name: {backup}")
+            utils.log(f"WARNING: Failed to parse date from backup name: {backup} - {str(e)}")
             continue
     
-    utils.log(f"Cleanup completed. Deleted {deleted_count} old backups.")
+    utils.log(f"Cleanup completed. Deleted {deleted_count} old backups, kept {skipped_count} recent backups.")
     return True 
