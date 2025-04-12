@@ -7,6 +7,7 @@ import urllib.parse
 import re
 from urllib.parse import urlparse
 from . import utils # Use relative import
+import shutil
 
 def sign_request_v4(method, host, region, path, params, headers, payload_hash, service, access_key, secret_key):
     """
@@ -71,8 +72,22 @@ def upload_to_r2_sigv4(config, source_file, dest_key):
         secret_key = r2_config['secret_key']
         bucket = r2_config['bucket']
         
+        # Enhanced debug logging for Opalstack troubleshooting
+        utils.log(f"R2 Config: endpoint={endpoint}, bucket={bucket}")
+        utils.log(f"File to upload: {source_file}")
+        
+        # Verify file exists and is readable
+        if not os.path.exists(source_file):
+            utils.log(f"ERROR: Source file does not exist: {source_file}")
+            return False
+            
+        if not os.access(source_file, os.R_OK):
+            utils.log(f"ERROR: Source file is not readable: {source_file}")
+            return False
+        
         # Get file size and content hash
         file_size = os.path.getsize(source_file)
+        utils.log(f"File size: {file_size} bytes")
         
         # Calculate file hash (SHA256)
         sha256_hash = hashlib.sha256()
@@ -84,6 +99,7 @@ def upload_to_r2_sigv4(config, source_file, dest_key):
         # Extract host and path from endpoint
         url_parts = urlparse(endpoint)
         host = url_parts.netloc
+        utils.log(f"Host: {host}")
         
         # Setup request parameters
         method = 'PUT'
@@ -124,6 +140,18 @@ def upload_to_r2_sigv4(config, source_file, dest_key):
         # Add URL
         curl_cmd.append(f'{endpoint}{path}')
         
+        # Log curl command with redacted authorization
+        safe_curl_cmd = curl_cmd.copy()
+        for i, arg in enumerate(safe_curl_cmd):
+            if 'Authorization:' in arg:
+                safe_curl_cmd[i] = 'Authorization: [REDACTED]'
+        utils.log(f"CURL command: {' '.join(safe_curl_cmd)}")
+        
+        # Check if curl is available in PATH
+        if not shutil.which('curl'):
+            utils.log("ERROR: curl command not found in PATH")
+            return False
+            
         # Execute the curl command
         utils.log(f"Executing upload command (SigV4)")
         result = subprocess.run(curl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -134,8 +162,20 @@ def upload_to_r2_sigv4(config, source_file, dest_key):
         else:
             stderr = result.stderr.decode('utf-8')
             stdout = result.stdout.decode('utf-8')
-            utils.log(f"Upload error: {stderr}")
-            utils.log(f"Upload output: {stdout}")
+            utils.log(f"Upload failed with return code: {result.returncode}")
+            utils.log(f"Upload error (stderr): {stderr}")
+            utils.log(f"Upload output (stdout): {stdout}")
+            
+            # Additional diagnostics for common issues
+            if "Could not resolve host" in stderr:
+                utils.log("ERROR: DNS resolution failed. Check network connectivity and endpoint URL.")
+            elif "Connection refused" in stderr:
+                utils.log("ERROR: Connection refused. Check firewall settings and endpoint accessibility.")
+            elif "401" in stderr:
+                utils.log("ERROR: Authentication failed. Check your access_key and secret_key.")
+            elif "403" in stderr:
+                utils.log("ERROR: Permission denied. Check bucket permissions and keys.")
+            
             return False
             
     except Exception as e:
