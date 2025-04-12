@@ -266,6 +266,9 @@ def list_backups_sigv4(config, project):
         secret_key = r2_config['secret_key']
         bucket = r2_config['bucket']
         
+        # Debug info about configuration
+        utils.log(f"Listing from bucket: {bucket} with project prefix: {project}/")
+        
         # Extract host and path from endpoint
         url_parts = urlparse(endpoint)
         host = url_parts.netloc
@@ -277,6 +280,9 @@ def list_backups_sigv4(config, project):
         params = f'list-type=2&prefix={urllib.parse.quote(prefix)}'
         region = 'auto'
         service = 's3'
+        
+        # Debug info about request
+        utils.log(f"List request: {endpoint}{path}?{params}")
         
         # Setup headers
         amzdate = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
@@ -304,9 +310,18 @@ def list_backups_sigv4(config, project):
             curl_cmd.extend(['-H', f'{key}: {value}'])
         
         # Add URL with parameters
-        curl_cmd.append(f'{endpoint}{path}?{params}')
+        full_url = f'{endpoint}{path}?{params}'
+        curl_cmd.append(full_url)
+        
+        # Log curl command with redacted authorization for debugging
+        safe_curl_cmd = curl_cmd.copy()
+        for i, arg in enumerate(safe_curl_cmd):
+            if 'Authorization:' in arg:
+                safe_curl_cmd[i] = 'Authorization: [REDACTED]'
+        utils.log(f"List CURL command: {' '.join(safe_curl_cmd)}")
         
         # Execute the curl command
+        utils.log("Executing list command...")
         result = subprocess.run(curl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         if result.returncode != 0:
@@ -317,9 +332,27 @@ def list_backups_sigv4(config, project):
         # Parse XML response to extract file keys
         response = result.stdout.decode('utf-8')
         
+        # Debug response
+        utils.log(f"Response length: {len(response)} bytes")
+        
+        # Log first 200 chars of response for debugging (truncated to avoid huge logs)
+        if response:
+            utils.log(f"Response preview: {response[:200]}...")
+        else:
+            utils.log("Empty response received")
+        
         try:
             # Use regex to extract Keys (more reliable than XML parsing for potentially malformed responses)
             keys = re.findall(r'<Key>([^<]+)</Key>', response)
+            
+            utils.log(f"Found {len(keys)} objects in bucket")
+            
+            # Log first few keys for debugging
+            if keys:
+                utils.log(f"First few keys: {keys[:3]}")
+            else:
+                utils.log("No keys found in response")
+                
             return keys
         except Exception as e:
             utils.log(f"WARNING: Failed to parse backup list: {str(e)}")

@@ -36,17 +36,43 @@ def display_backups(config, project):
     # Get list of backups
     backups = r2_client.list_backups_sigv4(config, project)
     
+    # Log all backups found for debugging
+    utils.log(f"Raw backup list: {backups}")
+    
+    # Check if we have any backups with the project prefix
+    project_backups = [b for b in backups if b.startswith(f"{project}/")]
+    
+    # If no backups match the project but there are other backups, show what prefixes exist
+    if not project_backups and backups:
+        utils.log(f"Warning: Found {len(backups)} objects but none match the project prefix '{project}/'")
+        # Extract unique prefixes 
+        all_prefixes = set()
+        for backup in backups:
+            if '/' in backup:
+                prefix = backup.split('/')[0]
+                all_prefixes.add(prefix)
+        
+        if all_prefixes:
+            utils.log(f"Available projects in bucket: {', '.join(all_prefixes)}")
+    
     if not backups:
         utils.log("No backups found.")
         return
     
-    utils.log(f"Found {len(backups)} backup(s):")
+    # Filter out any non-matching files (shouldn't happen with proper prefix)
+    relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
+    
+    utils.log(f"Found {len(relevant_backups)} backup(s) for project {project}")
+    
+    if not relevant_backups:
+        utils.log(f"No backups found matching project '{project}'")
+        return
     
     # Calculate max length for formatting
-    max_length = max(len(backup) for backup in backups)
+    max_length = max(len(backup) for backup in relevant_backups)
     
     # Display each backup with date extracted from name
-    for backup in backups:
+    for backup in relevant_backups:
         # Extract date from backup name
         date_match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
         date_str = date_match.group(1) if date_match else "Unknown date"
