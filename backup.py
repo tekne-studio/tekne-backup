@@ -69,6 +69,9 @@ def display_backups(config, project):
         utils.log(f"No backups found matching project '{project}'")
         return
     
+    # Sort backups by date (newest first)
+    relevant_backups.sort(key=utils.extract_date, reverse=True)
+    
     # Calculate max length for formatting
     max_length = max(len(backup) for backup in relevant_backups)
     

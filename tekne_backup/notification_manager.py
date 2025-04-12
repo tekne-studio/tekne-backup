@@ -2,6 +2,7 @@ import tempfile
 import os
 import subprocess
 import datetime
+import re
 from . import utils
 from . import r2_client
 
@@ -58,7 +59,13 @@ def send_email_notification(config, project, status, backup_file):
     if not backups:
         body.append("No backups found.")
     else:
-        for backup in backups:
+        # Filter out any non-matching files
+        relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
+        
+        # Sort backups by date (newest first)
+        relevant_backups.sort(key=utils.extract_date, reverse=True)
+        
+        for backup in relevant_backups:
             # Generate public URL
             public_url = r2_client.generate_public_url(config, backup)
             body.append(f"- {backup} ({public_url})")
@@ -101,13 +108,15 @@ def send_backup_report(config, project):
     if not relevant_backups:
         body.append(f"No backups found for project '{project.upper()}'.")
     else:
+        # Sort backups by date (newest first)
+        relevant_backups.sort(key=utils.extract_date, reverse=True)
+        
         body.append(f"Found {len(relevant_backups)} backup(s):")
         body.append("")
         
         # Display each backup with date extracted from name
         for backup in relevant_backups:
             # Extract date from backup name
-            import re
             date_match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
             date_str = date_match.group(1) if date_match else "Unknown date"
             
