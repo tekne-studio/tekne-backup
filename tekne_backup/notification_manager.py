@@ -59,34 +59,108 @@ def send_email_notification(config, project, status, backup_file):
         body.append("No backups found.")
     else:
         for backup in backups:
-            # Generate public URL for the backup
+            # Generate public URL
             public_url = r2_client.generate_public_url(config, backup)
             body.append(f"- {backup} ({public_url})")
     
     # Create the email message
     message = "\n".join(body)
     
-    # Send email using mail command
-    for recipient in email_config['to']:
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_email:
-                temp_email.write(message)
-                temp_email_path = temp_email.name
-            
-            mail_cmd = [
-                'mail',
-                '-s', subject,
-                recipient
-            ]
-            
-            with open(temp_email_path, 'r') as f:
-                result = subprocess.run(mail_cmd, stdin=f, stderr=subprocess.PIPE)
-            
-            os.unlink(temp_email_path)
-            
-            if result.returncode != 0:
-                utils.log(f"WARNING: Failed to send email to {recipient}: {result.stderr.decode('utf-8')}")
-        except Exception as e:
-            utils.log(f"WARNING: Failed to send email to {recipient}: {str(e)}")
+    # Send the email
+    _send_email(email_config, subject, message)
+
+def send_backup_report(config, project):
+    """Send an email report listing all available backups for a project"""
+    if 'email' not in config:
+        utils.log("WARNING: No email configuration found, skipping notification")
+        return False
     
-    utils.log(f"Email notification sent to {len(email_config['to'])} recipients") 
+    email_config = config['email']
+    if 'from' not in email_config or 'to' not in email_config:
+        utils.log("WARNING: Incomplete email configuration, skipping notification")
+        return False
+    
+    subject_prefix = email_config.get('subject_prefix', '[BACKUP]')
+    subject = f"{subject_prefix} {project} - Backup Inventory Report"
+    
+    # Create email body
+    body = [
+        f"Website Backup Inventory Report for {project}",
+        "==========================================",
+        "",
+        f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ""
+    ]
+    
+    # Get list of backups
+    backups = r2_client.list_backups_sigv4(config, project)
+    
+    # Filter out any non-matching files 
+    relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
+    
+    if not relevant_backups:
+        body.append(f"No backups found for project '{project}'.")
+    else:
+        body.append(f"Found {len(relevant_backups)} backup(s):")
+        body.append("")
+        
+        # Display each backup with date extracted from name
+        for backup in relevant_backups:
+            # Extract date from backup name
+            import re
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
+            date_str = date_match.group(1) if date_match else "Unknown date"
+            
+            # Generate public URL
+            public_url = r2_client.generate_public_url(config, backup)
+            
+            body.append(f"- {date_str}: {backup}")
+            body.append(f"  URL: {public_url}")
+            body.append("")
+    
+    # Create the email message
+    message = "\n".join(body)
+    
+    # Send the email
+    result = _send_email(email_config, subject, message)
+    
+    if result:
+        utils.log(f"Backup report email sent to {len(email_config['to'])} recipients")
+    
+    return result
+
+def _send_email(email_config, subject, message):
+    """Internal function to send an email (reused by both email functions)"""
+    try:
+        # Send email using mail command
+        recipients_sent = 0
+        
+        for recipient in email_config['to']:
+            try:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_email:
+                    temp_email.write(message)
+                    temp_email_path = temp_email.name
+                
+                mail_cmd = [
+                    'mail',
+                    '-s', subject,
+                    recipient
+                ]
+                
+                with open(temp_email_path, 'r') as f:
+                    result = subprocess.run(mail_cmd, stdin=f, stderr=subprocess.PIPE)
+                
+                os.unlink(temp_email_path)
+                
+                if result.returncode != 0:
+                    utils.log(f"WARNING: Failed to send email to {recipient}: {result.stderr.decode('utf-8')}")
+                else:
+                    recipients_sent += 1
+            except Exception as e:
+                utils.log(f"WARNING: Failed to send email to {recipient}: {str(e)}")
+        
+        return recipients_sent > 0
+        
+    except Exception as e:
+        utils.log(f"ERROR: Failed to send email: {str(e)}")
+        return False 

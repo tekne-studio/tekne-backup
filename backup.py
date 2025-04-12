@@ -10,6 +10,7 @@ Features:
 - Support for exclusion patterns
 Usage: ./backup.py --create --cleanup --project=projectname
        ./backup.py --list --project=projectname
+       ./backup.py --mail --project=projectname
 """
 
 import os
@@ -93,28 +94,39 @@ def main():
     parser.add_argument('--create', action='store_true', help='Create a new backup')
     parser.add_argument('--cleanup', action='store_true', help='Remove old backups')
     parser.add_argument('--list', action='store_true', help='List all backups for the project')
+    parser.add_argument('--mail', action='store_true', help='Send email report with backup inventory')
     parser.add_argument('--project', required=True, help='Project name')
     parser.add_argument('--config', default=DEFAULT_CONFIG_FILE, help='Path to config file')
     
     args = parser.parse_args()
     
     # Check if at least one operation is specified
-    if not args.create and not args.cleanup and not args.list:
-        utils.log("ERROR: No operation specified (--create, --cleanup, or --list)")
+    if not args.create and not args.cleanup and not args.list and not args.mail:
+        utils.log("ERROR: No operation specified (--create, --cleanup, --list, or --mail)")
         parser.print_help()
         sys.exit(1)
     
-    # Check required commands (not needed for list operation)
+    # Check required commands (not needed for list or mail operation)
     if args.create or args.cleanup:
         utils.check_required_commands()
     
     # Load configuration
     config = config_loader.load_config(args.config)
     
-    # List backups if requested
+    # Handle list operation
     if args.list:
         display_backups(config, args.project)
         sys.exit(0)
+    
+    # Handle mail operation
+    if args.mail:
+        utils.log(f"Sending backup inventory email for project: {args.project}")
+        if notification_manager.send_backup_report(config, args.project):
+            utils.log("Backup report email sent successfully")
+            sys.exit(0)
+        else:
+            utils.log("Failed to send backup report email")
+            sys.exit(1)
     
     # Create temp directory if needed
     temp_dir = config['settings']['temp_dir']

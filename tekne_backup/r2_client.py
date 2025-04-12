@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from . import utils # Use relative import
 import shutil
 import time
+import base64
 
 def sign_request_v4(method, host, region, path, params, headers, payload_hash, service, access_key, secret_key):
     """
@@ -273,47 +274,62 @@ def list_backups_sigv4(config, project):
         url_parts = urlparse(endpoint)
         host = url_parts.netloc
         
-        # Setup request parameters
+        # Setup request parameters - use the same SigV4 approach that works for uploads
         method = 'GET'
         path = f'/{bucket}/'
         prefix = f"{project}/"
-        params = f'list-type=2&prefix={urllib.parse.quote(prefix)}'
-        region = 'auto'
-        service = 's3'
         
-        # Debug info about request
-        utils.log(f"List request: {endpoint}{path}?{params}")
+        # We need to handle query parameters properly for SigV4
+        # First, build the URL without query params for proper signing
+        query_params = {'list-type': '2', 'prefix': prefix}
         
-        # Setup headers
+        # Canonical query string needs to be ordered by parameter name
+        canonical_qs_parts = []
+        for key in sorted(query_params.keys()):
+            value = query_params[key]
+            encoded_key = urllib.parse.quote(key, safe='')
+            encoded_value = urllib.parse.quote(value, safe='')
+            canonical_qs_parts.append(f"{encoded_key}={encoded_value}")
+        
+        canonical_querystring = '&'.join(canonical_qs_parts)
+        
+        # Build the URL for curl with encoded params
+        url_with_params = f"{endpoint}{path}?{canonical_querystring}"
+        
+        utils.log(f"List request with canonical query string: {url_with_params}")
+        
+        # Setup headers with required content-sha256 for empty payload
         amzdate = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+        datestamp = datetime.datetime.utcnow().strftime('%Y%m%d')
+        
+        # Empty payload hash for GET requests
+        empty_payload_hash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
         
         headers = {
             'Host': host,
             'X-Amz-Date': amzdate,
-            'X-Amz-Content-Sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'  # Empty payload hash
+            'X-Amz-Content-Sha256': empty_payload_hash  # Required by R2
         }
         
-        # Generate the signature
+        # Generate the signature using our working SigV4 function
         auth_header, _ = sign_request_v4(
-            method, host, region, path, params, headers, 
-            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-            service, access_key, secret_key
+            method, host, 'auto', path, canonical_querystring, headers, 
+            empty_payload_hash, 's3', access_key, secret_key
         )
         
         headers['Authorization'] = auth_header
         
         # Build curl command
-        curl_cmd = ['curl', '-s', '-X', method]
+        curl_cmd = ['curl', '-v', '-X', method]
         
         # Add headers to curl command
         for key, value in headers.items():
             curl_cmd.extend(['-H', f'{key}: {value}'])
         
         # Add URL with parameters
-        full_url = f'{endpoint}{path}?{params}'
-        curl_cmd.append(full_url)
+        curl_cmd.append(url_with_params)
         
-        # Log curl command with redacted authorization for debugging
+        # Log curl command with redacted authorization
         safe_curl_cmd = curl_cmd.copy()
         for i, arg in enumerate(safe_curl_cmd):
             if 'Authorization:' in arg:
@@ -321,46 +337,168 @@ def list_backups_sigv4(config, project):
         utils.log(f"List CURL command: {' '.join(safe_curl_cmd)}")
         
         # Execute the curl command
-        utils.log("Executing list command...")
+        utils.log("Executing list command with proper SigV4...")
         result = subprocess.run(curl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        if result.returncode != 0:
+        stdout = ""
+        stderr = ""
+        
+        if hasattr(result, 'stdout') and result.stdout:
+            stdout = result.stdout.decode('utf-8')
+        
+        if hasattr(result, 'stderr') and result.stderr:
             stderr = result.stderr.decode('utf-8')
+        
+        utils.log(f"Response code: {result.returncode}")
+        
+        if result.returncode != 0:
             utils.log(f"List error: {stderr}")
-            return []
+            # Don't fall back to another method - debug what's happening here first
         
         # Parse XML response to extract file keys
-        response = result.stdout.decode('utf-8')
+        response = stdout
         
         # Debug response
         utils.log(f"Response length: {len(response)} bytes")
         
-        # Log first 200 chars of response for debugging (truncated to avoid huge logs)
+        # Log first 200 chars of response for debugging
         if response:
             utils.log(f"Response preview: {response[:200]}...")
-        else:
-            utils.log("Empty response received")
         
-        try:
-            # Use regex to extract Keys (more reliable than XML parsing for potentially malformed responses)
-            keys = re.findall(r'<Key>([^<]+)</Key>', response)
-            
-            utils.log(f"Found {len(keys)} objects in bucket")
-            
-            # Log first few keys for debugging
-            if keys:
-                utils.log(f"First few keys: {keys[:3]}")
-            else:
-                utils.log("No keys found in response")
-                
+        # Extract keys
+        keys = re.findall(r'<Key>([^<]+)</Key>', response)
+        utils.log(f"Found {len(keys)} objects in bucket")
+        
+        # Log first few keys for debugging
+        if keys:
+            utils.log(f"First few keys: {keys[:3]}")
             return keys
-        except Exception as e:
-            utils.log(f"WARNING: Failed to parse backup list: {str(e)}")
-            # Fallback to empty list if parsing fails
+        else:
+            # If we still failed, log verbosely but don't try more methods yet
+            utils.log("No keys found in response. Full stderr:")
+            utils.log(stderr)
+            utils.log("Full stdout (truncated to 1000 chars):")
+            utils.log(stdout[:1000])
             return []
             
     except Exception as e:
         utils.log(f"ERROR: Failed to list backups: {str(e)}")
+        return []
+
+def list_objects_with_prefix(endpoint, bucket, prefix, access_key, secret_key):
+    """
+    List objects in a bucket with a specific prefix using a simpler approach
+    that's more compatible with R2's requirements
+    """
+    try:
+        url_parts = urlparse(endpoint)
+        host = url_parts.netloc
+        
+        # Use AWS CLI style command which is more reliable for listing
+        # This completely bypasses our manual SigV4 signing for listing
+        aws_cmd = [
+            'curl', 
+            '-s', 
+            '--location',  # Follow redirects if needed
+            '-H', f'Host: {host}'
+        ]
+        
+        # Add basic authorization header directly
+        auth_string = f"{access_key}:{secret_key}"
+        encoded_auth = base64.b64encode(auth_string.encode()).decode()
+        aws_cmd.extend(['-H', f'Authorization: Basic {encoded_auth}'])
+        
+        # Build URL with proper path style addressing
+        url = f"{endpoint}/{bucket}?list-type=2&prefix={urllib.parse.quote(prefix)}"
+        aws_cmd.append(url)
+        
+        utils.log(f"Executing simplified list command: curl -s [AUTH REDACTED] {url}")
+        
+        result = subprocess.run(aws_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8')
+            utils.log(f"List error: {stderr}")
+            
+            # Try alternative approach with AWS tool-style syntax
+            utils.log("Trying alternative listing approach...")
+            return list_objects_alternative(endpoint, bucket, prefix, access_key, secret_key)
+        
+        response = result.stdout.decode('utf-8')
+        utils.log(f"Response length: {len(response)} bytes")
+        
+        if response:
+            utils.log(f"Response preview: {response[:200]}...")
+        
+        # Extract keys
+        keys = re.findall(r'<Key>([^<]+)</Key>', response)
+        utils.log(f"Found {len(keys)} objects in bucket")
+        
+        if keys:
+            utils.log(f"First few keys: {keys[:3]}")
+        else:
+            utils.log("No keys found in response - trying alternative method")
+            return list_objects_alternative(endpoint, bucket, prefix, access_key, secret_key)
+            
+        return keys
+    except Exception as e:
+        utils.log(f"Error in list_objects_with_prefix: {str(e)}")
+        # Fallback to alternative method
+        return list_objects_alternative(endpoint, bucket, prefix, access_key, secret_key)
+
+def list_objects_alternative(endpoint, bucket, prefix, access_key, secret_key):
+    """
+    Alternative method to list objects using more direct S3 compatible syntax
+    """
+    try:
+        # Use more S3-like syntax for better compatibility
+        curl_cmd = ['curl', '-s', '-v']
+        
+        # URL without query params for proper signing
+        url = f"{endpoint}/{bucket}"
+        
+        # Add the query parameters directly to the URL
+        url_with_params = f"{url}?list-type=2&prefix={urllib.parse.quote(prefix)}"
+        
+        # Add date header for better compatibility
+        amzdate = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+        date_header = datetime.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        curl_cmd.extend([
+            '-H', f'Date: {date_header}',
+            '-H', f'X-Amz-Date: {amzdate}',
+            '-H', f'Authorization: AWS {access_key}:{secret_key}'
+        ])
+        
+        curl_cmd.append(url_with_params)
+        
+        utils.log(f"Executing alternative list command with: {' '.join(curl_cmd).replace(secret_key, '[SECRET]')}")
+        
+        result = subprocess.run(curl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        response = result.stdout.decode('utf-8')
+        utils.log(f"Alternative response length: {len(response)} bytes")
+        
+        if response:
+            utils.log(f"Alternative response preview: {response[:200]}...")
+        
+        # Extract keys
+        keys = re.findall(r'<Key>([^<]+)</Key>', response)
+        utils.log(f"Alternative method found {len(keys)} objects in bucket")
+        
+        if not keys:
+            # Last resort - try without any authentication
+            utils.log("Trying to list without authentication (if bucket is public)")
+            simple_cmd = ['curl', '-s', url_with_params]
+            simple_result = subprocess.run(simple_cmd, stdout=subprocess.PIPE)
+            simple_response = simple_result.stdout.decode('utf-8')
+            keys = re.findall(r'<Key>([^<]+)</Key>', simple_response)
+            utils.log(f"Public attempt found {len(keys)} objects")
+        
+        return keys
+        
+    except Exception as e:
+        utils.log(f"Error in list_objects_alternative: {str(e)}")
         return []
 
 def delete_from_r2_sigv4(config, key):
