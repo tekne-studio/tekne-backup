@@ -6,6 +6,9 @@ r2:
   bucket: "your-backup-bucket"
   # Optional: public domain if you've configured a custom domain for your R2 bucket
   # public_domain: "backups.example.com"
+  # Optional: upload settings for network issues
+  upload_retries: 3 # Number of retries for failed uploads
+  upload_timeout: 600 # Timeout in seconds for uploads (default: 300)
 
 # Global settings
 settings:
