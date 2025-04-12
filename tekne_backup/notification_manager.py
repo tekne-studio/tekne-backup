@@ -17,11 +17,11 @@ def send_email_notification(config, project, status, backup_file):
         return
     
     subject_prefix = email_config.get('subject_prefix', '[BACKUP]')
-    subject = f"{subject_prefix} {project} - Backup {status}"
+    subject = f"{subject_prefix} {project.upper()} - Backup {status}"
     
     # Create email body
     body = [
-        f"Website Backup Report for {project}",
+        f"Website Backup Report for {project.upper()}",
         "=================================",
         "",
         f"Status: {status}",
@@ -81,11 +81,11 @@ def send_backup_report(config, project):
         return False
     
     subject_prefix = email_config.get('subject_prefix', '[BACKUP]')
-    subject = f"{subject_prefix} {project} - Backup Inventory Report"
+    subject = f"{subject_prefix} {project.upper()} - Backup Inventory Report"
     
     # Create email body
     body = [
-        f"Website Backup Inventory Report for {project}",
+        f"Website Backup Inventory Report for {project.upper()}",
         "==========================================",
         "",
         f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -99,7 +99,7 @@ def send_backup_report(config, project):
     relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
     
     if not relevant_backups:
-        body.append(f"No backups found for project '{project}'.")
+        body.append(f"No backups found for project '{project.upper()}'.")
     else:
         body.append(f"Found {len(relevant_backups)} backup(s):")
         body.append("")
