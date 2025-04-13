@@ -30,11 +30,31 @@ Python utility for website backups to Cloudflare R2 storage.
 
 # Send report
 ./backup.py --mail --project=mywebsite
+
+# Create backup and clean
+./backup.py --create --cleanup --project=mywebsite
+```
+
+## Example of crontab configuration:
+
+```bash
+contrab -e
+```
+
+```bash
+# every sunday
+MAILTO="admin@example.com"
+0 3 * * 0 /usr/bin/python3 /home/mywebsite/backup.py --create --cleanup --project=mywebsite > /dev/null 2>&1
+
+# 5 minutes
+MAILTO="admin@example.com"
+*/5 * * * * /usr/bin/python3 /home/mywebsite/backup.py --create --cleanup --project=mywebsite > /dev/null 2>&1
 ```
 
 ## Configuration
 
 Set up your projects, R2 credentials, and retention policies in `backup-config.yml`.
+
 
 ## Requirements
 
