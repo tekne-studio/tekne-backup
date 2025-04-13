@@ -27,8 +27,9 @@ from tekne_backup import backup_manager
 from tekne_backup import r2_client
 from tekne_backup import notification_manager
 
-# Default configuration file path
-DEFAULT_CONFIG_FILE = "backup-config.yml"
+# Default configuration file path - use script directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CONFIG_FILE = os.path.join(SCRIPT_DIR, "backup-config.yml")
 
 def display_backups(config, project):
     """Display all backups for a project"""
@@ -48,7 +49,7 @@ def display_backups(config, project):
         utils.log(f"Warning: Found {len(backups)} objects but none match the project prefix '{project}/'")
         # Extract unique prefixes 
         all_prefixes = set()
-        for backup in backups:
+    for backup in backups:
             if '/' in backup:
                 prefix = backup.split('/')[0]
                 all_prefixes.add(prefix)

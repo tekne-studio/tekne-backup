@@ -17,44 +17,54 @@ def create_backup(config, project, project_config):
     backup_dir = os.path.join(temp_dir, f"{project}_{timestamp}")
     zip_file = os.path.join(temp_dir, f"{backup_filename}.zip")
     
+    # Define has_db_config at the top level so it's available throughout the function
+    db_keys = ['db_host', 'db_name', 'db_user', 'db_pass']
+    has_db_config = all(key in project_config for key in db_keys)
+    
     try:
         utils.log(f"Creating backup for project: {project}")
         
         # Create temporary directory
         os.makedirs(backup_dir, exist_ok=True)
         
-        # Check if database credentials are provided
-        db_keys = ['db_host', 'db_name', 'db_user', 'db_pass']
-        has_db_config = all(key in project_config for key in db_keys)
-        
         # Backup database if credentials are provided
         if has_db_config:
-            db_host = project_config['db_host']
-            db_name = project_config['db_name']
-            db_user = project_config['db_user']
-            db_pass = project_config['db_pass']
-            
-            utils.log(f"Backing up database: {db_name}")
-            db_file = os.path.join(backup_dir, f"{project}_database.sql")
-            
-            mysqldump_cmd = [
-                'mysqldump',
-                '-h', db_host,
-                '-u', db_user,
-                f'-p{db_pass}',
-                db_name
-            ]
-            
-            with open(db_file, 'w') as f:
-                result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE)
-                if result.returncode != 0:
-                    utils.log(f"ERROR: Database backup failed: {result.stderr.decode('utf-8')}")
-                    shutil.rmtree(backup_dir)
-                    return None
+            try:
+                db_host = project_config['db_host']
+                db_name = project_config['db_name']
+                db_user = project_config['db_user']
+                db_pass = project_config['db_pass']
+                
+                utils.log(f"Backing up database: {db_name}")
+                db_file = os.path.join(backup_dir, f"{project}_database.sql")
+                
+                mysqldump_cmd = [
+                    'mysqldump',
+                    '-h', db_host,
+                    '-u', db_user,
+                    f'-p{db_pass}',
+                    db_name
+                ]
+                
+                with open(db_file, 'w') as f:
+                    result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE)
+                    if result.returncode != 0:
+                        utils.log(f"ERROR: Database backup failed: {result.stderr.decode('utf-8')}")
+                        shutil.rmtree(backup_dir)
+                        return None
+            except Exception as db_error:
+                utils.log(f"ERROR: Database backup failed: {str(db_error)}")
+                shutil.rmtree(backup_dir)
+                return None
         else:
             utils.log("Database credentials not provided, skipping database backup")
         
         # Backup website files
+        if 'website_path' not in project_config:
+            utils.log("ERROR: No website_path specified in project configuration")
+            shutil.rmtree(backup_dir)
+            return None
+            
         website_path = project_config['website_path']
         utils.log(f"Backing up website files from: {website_path}")
         
