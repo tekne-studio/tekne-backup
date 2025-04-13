@@ -52,6 +52,15 @@ projects:
       - "web/cpresources/*"
       - "vendor/bin/*"
 
+  # Example for a site with SQLite or no database (files-only backup)
+  mystaticsite:
+    # No database credentials = no database backup
+    website_path: "/var/www/staticsite"
+    exclude:
+      - "cache/*"
+      - "tmp/*"
+      - ".git/"
+
 # Optional: Email notification settings
 email:
   # From address for notification emails

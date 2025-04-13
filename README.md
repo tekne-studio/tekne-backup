@@ -76,6 +76,29 @@ Adjust the paths and schedules according to your specific needs.
 
 Set up your projects, R2 credentials, and retention policies in `backup-config.yml`.
 
+### Database Configuration
+
+The database backup is optional. For sites using SQLite or static sites that don't require database backups, you can simply omit the database credentials from the project configuration:
+
+```yaml
+# Project with MySQL database
+mywordpress:
+  db_host: "localhost"
+  db_name: "database_name"
+  db_user: "username"
+  db_pass: "password"
+  website_path: "/path/to/site"
+
+# Project without database backup (for SQLite or static sites)
+mystaticsite:
+  website_path: "/path/to/site"
+  exclude:
+    - "cache/*"
+    - "tmp/*"
+```
+
+When database credentials are not provided, the backup process will skip the database backup step and only back up the files.
+
 ## Project Structure
 
 The project is organized as follows:
