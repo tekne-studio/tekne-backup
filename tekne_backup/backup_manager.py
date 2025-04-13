@@ -146,7 +146,7 @@ def create_backup(config, project, project_config):
         return None
 
 def cleanup_backups(config, project):
-    """Clean up backups older than retention period"""
+    """Clean up backups older than retention period while respecting minimum backup count"""
     utils.log(f"Cleaning up old backups for project: {project}")
     
     # Check if retention_time (in seconds) is specified, otherwise use retention_days
@@ -159,14 +159,25 @@ def cleanup_backups(config, project):
         utils.log(f"Using retention period of {retention_days} days")
         cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
     
+    # Get minimum backups to keep (default: 3 if not specified)
+    min_backups = config['settings'].get('min_backups', 3)
+    utils.log(f"Minimum backups to keep: {min_backups}")
+    
     cutoff_timestamp = cutoff_date.timestamp()
     utils.log(f"Cutoff time: {cutoff_date.strftime('%Y-%m-%d--%H-%M')}")
     
+    # Get all backups for this project
     backups = r2_client.list_backups_sigv4(config, project)
-    deleted_count = 0
-    skipped_count = 0
+    relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
     
-    for backup in backups:
+    if not relevant_backups:
+        utils.log(f"No backups found for project '{project}', nothing to clean up")
+        return True
+    
+    # Process all backups with valid dates
+    backup_dates = []
+    
+    for backup in relevant_backups:
         # Extract full date-time pattern from backup filename using regex
         match = re.search(r'(\d{4}-\d{2}-\d{2}--\d{2}-\d{2})', backup)
         if not match:
@@ -180,19 +191,41 @@ def cleanup_backups(config, project):
             backup_datetime = datetime.datetime.strptime(backup_datetime_str, "%Y-%m-%d--%H-%M")
             backup_timestamp = backup_datetime.timestamp()
             
-            utils.log(f"Checking backup: {backup} (created: {backup_datetime_str})")
-            
-            # Check if backup is older than retention period
-            if backup_timestamp < cutoff_timestamp:
-                utils.log(f"Deleting old backup: {backup}")
-                if r2_client.delete_from_r2_sigv4(config, backup):
-                    deleted_count += 1
-            else:
-                utils.log(f"Keeping recent backup: {backup}")
-                skipped_count += 1
+            # Add to our list for sorting
+            backup_dates.append((backup, backup_datetime, backup_timestamp))
         except Exception as e:
             utils.log(f"WARNING: Failed to parse date from backup name: {backup} - {str(e)}")
             continue
     
-    utils.log(f"Cleanup completed. Deleted {deleted_count} old backups, kept {skipped_count} recent backups.")
+    # Sort backups by date (newest first)
+    backup_dates.sort(key=lambda x: x[2], reverse=True)
+    
+    # Log all found backups
+    utils.log(f"Found {len(backup_dates)} backup(s) with valid dates")
+    for i, (backup, dt, _) in enumerate(backup_dates):
+        utils.log(f"  {i+1}. {backup} (created: {dt.strftime('%Y-%m-%d--%H-%M')})")
+    
+    # Keep the minimum number of backups regardless of age
+    backups_to_keep = backup_dates[:min_backups]
+    backups_to_check = backup_dates[min_backups:]
+    
+    utils.log(f"Keeping {len(backups_to_keep)} newest backups to meet minimum requirement")
+    
+    # For the remaining backups, apply the retention policy
+    deleted_count = 0
+    skipped_count = len(backups_to_keep)
+    
+    for backup, backup_datetime, backup_timestamp in backups_to_check:
+        utils.log(f"Checking backup: {backup} (created: {backup_datetime.strftime('%Y-%m-%d--%H-%M')})")
+        
+        # Check if backup is older than retention period
+        if backup_timestamp < cutoff_timestamp:
+            utils.log(f"Deleting old backup: {backup}")
+            if r2_client.delete_from_r2_sigv4(config, backup):
+                deleted_count += 1
+        else:
+            utils.log(f"Keeping recent backup: {backup}")
+            skipped_count += 1
+    
+    utils.log(f"Cleanup completed. Deleted {deleted_count} old backups, kept {skipped_count} backups in total.")
     return True 

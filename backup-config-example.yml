@@ -16,6 +16,8 @@ settings:
   retention_days: 90
   # Alternative: specify retention time in seconds for testing (takes precedence over retention_days)
   # retention_time: 300 # 5 minutes in seconds
+  # Minimum number of backups to keep regardless of age
+  min_backups: 7
   # Temporary directory for processing backups
   temp_dir: "/tmp/website_backups"
 
