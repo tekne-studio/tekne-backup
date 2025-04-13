@@ -37,24 +37,72 @@ Python utility for website backups to Cloudflare R2 storage.
 
 ## Example of crontab configuration:
 
-```bash
-contrab -e
-```
+To schedule automatic backups, you can use crontab on Linux/Unix systems:
 
 ```bash
-# every sunday
-MAILTO="admin@example.com"
-0 3 * * 0 /usr/bin/python3 /home/mywebsite/backup.py --create --cleanup --project=mywebsite > /dev/null 2>&1
-
-# 5 minutes
-MAILTO="admin@example.com"
-*/5 * * * * /usr/bin/python3 /home/mywebsite/backup.py --create --cleanup --project=mywebsite > /dev/null 2>&1
+# Open crontab editor
+crontab -e
 ```
+
+Example crontab entries:
+
+```bash
+# Weekly backup every Sunday at 3:00 AM
+0 3 * * 0 /usr/bin/python3 /path/to/backup.py --create --cleanup --project=myproject
+
+# Daily backup at 2:00 AM
+0 2 * * * /usr/bin/python3 /path/to/backup.py --create --project=myproject
+
+# Monthly backup retention report on the 1st of each month
+0 9 1 * * /usr/bin/python3 /path/to/backup.py --mail --project=myproject
+```
+
+For important backups, you may want to set up email notifications for any errors:
+
+```bash
+# Set email for cron job notifications
+MAILTO="admin@example.com"
+
+# Weekly backup with output redirected (only errors will be mailed)
+0 3 * * 0 /usr/bin/python3 /path/to/backup.py --create --cleanup --project=myproject 2>&1
+
+# Or log everything to a file
+0 3 * * 0 /usr/bin/python3 /path/to/backup.py --create --cleanup --project=myproject > /var/log/backups.log 2>&1
+```
+
+Adjust the paths and schedules according to your specific needs.
 
 ## Configuration
 
 Set up your projects, R2 credentials, and retention policies in `backup-config.yml`.
 
+## Project Structure
+
+The project is organized as follows:
+
+```
+tekne-backup/
+├── backup.py                   # Main script entry point
+├── backup-config.yml           # Your active configuration file
+├── backup-config-example.yml   # Example configuration template
+├── README.md                   # This documentation
+└── tekne_backup/               # Core functionality module
+    ├── __init__.py             # Package initialization
+    ├── backup_manager.py       # Handles backup creation and cleanup
+    ├── config_loader.py        # Loads and validates configuration
+    ├── notification_manager.py # Handles email notifications
+    ├── r2_client.py            # Interacts with Cloudflare R2 storage
+    └── utils.py                # Shared utility functions
+```
+
+### Component Responsibilities
+
+- **backup.py**: Entry point script that parses command-line arguments and orchestrates the backup process.
+- **backup_manager.py**: Handles the creation of backups (database dumps and file backups) and cleanup of old backups based on retention policies.
+- **config_loader.py**: Loads and validates the YAML configuration file.
+- **notification_manager.py**: Manages email notifications for backup completion and sending backup inventory reports.
+- **r2_client.py**: Provides functionality for interacting with Cloudflare R2 storage using SigV4 authentication.
+- **utils.py**: Contains utility functions used across the project, such as logging and date handling.
 
 ## Requirements
 
