@@ -12,7 +12,7 @@ Python utility for website backups to Cloudflare R2 storage.
 ## Setup
 
 1. Clone repository
-2. `pip install -r requirements.txt`
+2. `python3 -m pip install -r requirements.txt`
 3. `cp backup-config-example.yml backup-config.yml`
 4. Edit configuration file
 5. Make the script executable: `chmod +x backup.py`

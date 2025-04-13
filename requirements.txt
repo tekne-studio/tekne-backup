@@ -1,0 +1,2 @@
+# Tekne Backup requirements
+PyYAML>=6.0.1
