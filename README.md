@@ -15,6 +15,21 @@ Python utility for website backups to Cloudflare R2 storage.
 2. `pip install -r requirements.txt`
 3. `cp backup-config-example.yml backup-config.yml`
 4. Edit configuration file
+5. Make the script executable: `chmod +x backup.py`
+
+If you're getting "Permission denied" errors when trying to run the script, make sure to set the proper permissions:
+
+```bash
+chmod +x backup.py
+```
+
+You can confirm the script is executable if you see the execute (x) permission when listing the file:
+
+```bash
+ls -l backup.py
+# Should show something like: -rwxr-xr-x 1 user group 4562 Apr 12 20:45 backup.py
+#                              ^^^ Note the 'x' which indicates executable
+```
 
 ## Usage
 
