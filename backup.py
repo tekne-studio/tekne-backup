@@ -47,13 +47,11 @@ def display_backups(config, project):
     # If no backups match the project but there are other backups, show what prefixes exist
     if not project_backups and backups:
         utils.log(f"Warning: Found {len(backups)} objects but none match the project prefix '{project}/'")
-        # Extract unique prefixes 
         all_prefixes = set()
-    for backup in backups:
+        for backup in backups:
             if '/' in backup:
-                prefix = backup.split('/')[0]
-                all_prefixes.add(prefix)
-        
+                all_prefixes.add(backup.split('/')[0])
+
         if all_prefixes:
             utils.log(f"Available projects in bucket: {', '.join(all_prefixes)}")
     

@@ -3,6 +3,7 @@ import datetime
 import subprocess
 import shutil
 import re
+import tempfile
 from . import utils
 from . import s3_client
 
@@ -29,33 +30,44 @@ def create_backup(config, project, project_config):
         
         # Backup database if credentials are provided
         if has_db_config:
+            db_host = project_config['db_host']
+            db_name = project_config['db_name']
+            db_user = project_config['db_user']
+            db_pass = project_config['db_pass']
+
+            utils.log(f"Backing up database: {db_name}")
+            db_file = os.path.join(backup_dir, f"{project}_database.sql")
+
+            # Pass credentials via a temp defaults file so the password never
+            # appears in argv (visible to other users via `ps`).
+            defaults_fd, defaults_path = tempfile.mkstemp(prefix='mysqldump-', suffix='.cnf')
             try:
-                db_host = project_config['db_host']
-                db_name = project_config['db_name']
-                db_user = project_config['db_user']
-                db_pass = project_config['db_pass']
-                
-                utils.log(f"Backing up database: {db_name}")
-                db_file = os.path.join(backup_dir, f"{project}_database.sql")
-                
+                os.fchmod(defaults_fd, 0o600)
+                with os.fdopen(defaults_fd, 'w') as f:
+                    f.write("[client]\n")
+                    f.write(f"host={db_host}\n")
+                    f.write(f"user={db_user}\n")
+                    f.write(f"password={db_pass}\n")
+
                 mysqldump_cmd = [
                     'mysqldump',
-                    '-h', db_host,
-                    '-u', db_user,
-                    f'-p{db_pass}',
-                    db_name
+                    f'--defaults-extra-file={defaults_path}',
+                    db_name,
                 ]
-                
+
                 with open(db_file, 'w') as f:
                     result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE)
-                    if result.returncode != 0:
-                        utils.log(f"ERROR: Database backup failed: {result.stderr.decode('utf-8')}")
-                        shutil.rmtree(backup_dir)
-                        return None
+                if result.returncode != 0:
+                    utils.log(f"ERROR: Database backup failed: {result.stderr.decode('utf-8')}")
+                    shutil.rmtree(backup_dir)
+                    return None
             except Exception as db_error:
                 utils.log(f"ERROR: Database backup failed: {str(db_error)}")
                 shutil.rmtree(backup_dir)
                 return None
+            finally:
+                if os.path.exists(defaults_path):
+                    os.unlink(defaults_path)
         else:
             utils.log("Database credentials not provided, skipping database backup")
         
