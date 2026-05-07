@@ -1,11 +1,12 @@
 # Tekne Backup
 
-Python utility for website backups to Cloudflare R2 storage.
+Python utility for website backups to S3-compatible object storage (Cloudflare R2, Hetzner Object Storage, etc.).
 
 ## Features
 
 - Database and file backups
-- Cloudflare R2 integration with SigV4 authentication
+- S3-compatible storage with SigV4 authentication (tested against Cloudflare R2 and Hetzner)
+- Configurable region and URL addressing style (path / virtual-hosted)
 - Automatic cleanup of old backups
 - Email notifications
 
@@ -89,7 +90,16 @@ Adjust the paths and schedules according to your specific needs.
 
 ## Configuration
 
-Set up your projects, R2 credentials, and retention policies in `backup-config.yml`.
+Set up your projects, storage credentials, and retention policies in `backup-config.yml`.
+
+### Storage provider
+
+The `storage:` section configures any S3-compatible backend. Two fields control provider differences:
+
+- `region`: `"auto"` for Cloudflare R2; a real region (e.g. `"fsn1"`, `"nbg1"`, `"hel1"`) for Hetzner; the AWS region for S3.
+- `addressing_style`: `"path"` for R2 (e.g. `endpoint/bucket/key`); `"virtual"` for Hetzner / AWS S3 (e.g. `bucket.endpoint/key`).
+
+See [`backup-config-example.yml`](backup-config-example.yml) for the full shape.
 
 ### Database Configuration
 

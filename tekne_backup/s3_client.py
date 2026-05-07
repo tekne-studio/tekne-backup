@@ -11,6 +11,33 @@ import shutil
 import time
 import base64
 
+
+def _resolve_endpoint(s3_config, key=''):
+    """Build (host, canonical_path, full_url) honoring addressing_style.
+
+    path-style:    host = endpoint host,           path = /bucket/key
+    virtual-style: host = bucket.endpoint host,    path = /key
+    """
+    endpoint = s3_config['endpoint'].rstrip('/')
+    bucket = s3_config['bucket']
+    style = s3_config.get('addressing_style', 'path')
+
+    url_parts = urlparse(endpoint)
+    endpoint_host = url_parts.netloc
+    scheme = url_parts.scheme or 'https'
+
+    if style == 'virtual':
+        host = f"{bucket}.{endpoint_host}"
+        path = f"/{key}" if key else "/"
+        full_url = f"{scheme}://{host}{path}"
+    else:
+        host = endpoint_host
+        path = f"/{bucket}/{key}" if key else f"/{bucket}/"
+        full_url = f"{endpoint}{path}"
+
+    return host, path, full_url
+
+
 def sign_request_v4(method, host, region, path, params, headers, payload_hash, service, access_key, secret_key):
     """
     Generate AWS SigV4 signature for the request
@@ -76,11 +103,11 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
         timeout: Connection and operation timeout in seconds (default: 5 minutes)
     """
     # Get configuration values for retries and timeout if available
-    if 'r2' in config and 'upload_retries' in config['r2']:
-        max_retries = config['r2']['upload_retries']
+    if 'storage' in config and 'upload_retries' in config['storage']:
+        max_retries = config['storage']['upload_retries']
     
-    if 'r2' in config and 'upload_timeout' in config['r2']:
-        timeout = config['r2']['upload_timeout']
+    if 'storage' in config and 'upload_timeout' in config['storage']:
+        timeout = config['storage']['upload_timeout']
     
     utils.log(f"Using upload settings: max_retries={max_retries}, timeout={timeout} seconds")
     
@@ -89,14 +116,15 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
             if attempt > 1:
                 utils.log(f"Retry attempt {attempt}/{max_retries} for uploading {source_file}")
                 
-            r2_config = config['r2']
+            r2_config = config['storage']
             endpoint = r2_config['endpoint']
             access_key = r2_config['access_key']
             secret_key = r2_config['secret_key']
             bucket = r2_config['bucket']
-            
+            region = r2_config.get('region', 'auto')
+
             # Enhanced debug logging for Opalstack troubleshooting
-            utils.log(f"R2 Config: endpoint={endpoint}, bucket={bucket}")
+            utils.log(f"Storage Config: endpoint={endpoint}, bucket={bucket}, region={region}, style={r2_config.get('addressing_style', 'path')}")
             utils.log(f"File to upload: {source_file}")
             
             # Verify file exists and is readable
@@ -120,15 +148,12 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
                     sha256_hash.update(byte_block)
             file_hash = sha256_hash.hexdigest()
             
-            # Extract host and path from endpoint
-            url_parts = urlparse(endpoint)
-            host = url_parts.netloc
+            # Resolve host/path/url based on addressing style
+            host, path, upload_url = _resolve_endpoint(r2_config, dest_key)
             utils.log(f"Host: {host}")
-            
+
             # Setup request parameters
             method = 'PUT'
-            path = f'/{bucket}/{dest_key}'
-            region = 'auto'  # Cloudflare R2 uses 'auto'
             service = 's3'
             
             # Setup headers
@@ -169,9 +194,9 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
             
             # Add file to upload
             curl_cmd.extend(['-T', source_file])
-            
+
             # Add URL
-            curl_cmd.append(f'{endpoint}{path}')
+            curl_cmd.append(upload_url)
             
             # Log curl command with redacted authorization
             safe_curl_cmd = curl_cmd.copy()
@@ -270,28 +295,26 @@ def upload_to_r2_sigv4(config, source_file, dest_key, max_retries=3, timeout=300
 def list_backups_sigv4(config, project):
     """List all backups for a project using SigV4"""
     try:
-        r2_config = config['r2']
-        endpoint = r2_config['endpoint']
+        r2_config = config['storage']
         access_key = r2_config['access_key']
         secret_key = r2_config['secret_key']
         bucket = r2_config['bucket']
-        
+        region = r2_config.get('region', 'auto')
+
         # Debug info about configuration
         utils.log(f"Listing from bucket: {bucket} with project prefix: {project}/")
-        
-        # Extract host and path from endpoint
-        url_parts = urlparse(endpoint)
-        host = url_parts.netloc
-        
+
+        # Resolve host/path/url based on addressing style (no key for listing)
+        host, path, base_url = _resolve_endpoint(r2_config)
+
         # Setup request parameters - use the same SigV4 approach that works for uploads
         method = 'GET'
-        path = f'/{bucket}/'
         prefix = f"{project}/"
-        
+
         # We need to handle query parameters properly for SigV4
         # First, build the URL without query params for proper signing
         query_params = {'list-type': '2', 'prefix': prefix}
-        
+
         # Canonical query string needs to be ordered by parameter name
         canonical_qs_parts = []
         for key in sorted(query_params.keys()):
@@ -299,11 +322,11 @@ def list_backups_sigv4(config, project):
             encoded_key = urllib.parse.quote(key, safe='')
             encoded_value = urllib.parse.quote(value, safe='')
             canonical_qs_parts.append(f"{encoded_key}={encoded_value}")
-        
+
         canonical_querystring = '&'.join(canonical_qs_parts)
-        
+
         # Build the URL for curl with encoded params
-        url_with_params = f"{endpoint}{path}?{canonical_querystring}"
+        url_with_params = f"{base_url}?{canonical_querystring}"
         
         utils.log(f"List request with canonical query string: {url_with_params}")
         
@@ -322,7 +345,7 @@ def list_backups_sigv4(config, project):
         
         # Generate the signature using our working SigV4 function
         auth_header, _ = sign_request_v4(
-            method, host, 'auto', path, canonical_querystring, headers, 
+            method, host, region, path, canonical_querystring, headers,
             empty_payload_hash, 's3', access_key, secret_key
         )
         
@@ -513,20 +536,16 @@ def list_objects_alternative(endpoint, bucket, prefix, access_key, secret_key):
 def delete_from_r2_sigv4(config, key):
     """Delete a file from R2 using SigV4"""
     try:
-        r2_config = config['r2']
-        endpoint = r2_config['endpoint']
+        r2_config = config['storage']
         access_key = r2_config['access_key']
         secret_key = r2_config['secret_key']
-        bucket = r2_config['bucket']
-        
-        # Extract host and path from endpoint
-        url_parts = urlparse(endpoint)
-        host = url_parts.netloc
-        
+        region = r2_config.get('region', 'auto')
+
+        # Resolve host/path/url based on addressing style
+        host, path, delete_url = _resolve_endpoint(r2_config, key)
+
         # Setup request parameters
         method = 'DELETE'
-        path = f'/{bucket}/{key}'
-        region = 'auto'
         service = 's3'
         
         # Setup headers
@@ -549,13 +568,13 @@ def delete_from_r2_sigv4(config, key):
         
         # Build curl command
         curl_cmd = ['curl', '-s', '-X', method]
-        
+
         # Add headers to curl command
-        for key, value in headers.items():
-            curl_cmd.extend(['-H', f'{key}: {value}'])
-        
+        for hkey, value in headers.items():
+            curl_cmd.extend(['-H', f'{hkey}: {value}'])
+
         # Add URL
-        curl_cmd.append(f'{endpoint}{path}')
+        curl_cmd.append(delete_url)
         
         # Execute the curl command
         result = subprocess.run(curl_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -573,15 +592,11 @@ def delete_from_r2_sigv4(config, key):
 
 def generate_public_url(config, key):
     """Generate a public URL for a backup file"""
-    r2_config = config['r2']
-    
-    # Use public domain if available, otherwise use endpoint
+    r2_config = config['storage']
+
+    # Use public domain if available, otherwise derive from endpoint + addressing style
     if 'public_domain' in r2_config:
         return f"https://{r2_config['public_domain']}/{key}"
-    else:
-        bucket = r2_config['bucket']
-        endpoint = r2_config['endpoint']
-        url_parts = urlparse(endpoint)
-        host = url_parts.netloc
-        
-        return f"https://{host}/{bucket}/{key}" 
+
+    _, _, full_url = _resolve_endpoint(r2_config, key)
+    return full_url

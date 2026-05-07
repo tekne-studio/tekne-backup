@@ -4,7 +4,7 @@ import subprocess
 import datetime
 import re
 from . import utils
-from . import r2_client
+from . import s3_client
 
 def send_email_notification(config, project, status, backup_file):
     """Send email notification about backup status"""
@@ -55,7 +55,7 @@ def send_email_notification(config, project, status, backup_file):
     body.append("Available backups in R2:")
     body.append("")
     
-    backups = r2_client.list_backups_sigv4(config, project)
+    backups = s3_client.list_backups_sigv4(config, project)
     if not backups:
         body.append("No backups found.")
     else:
@@ -67,7 +67,7 @@ def send_email_notification(config, project, status, backup_file):
         
         for backup in relevant_backups:
             # Generate public URL
-            public_url = r2_client.generate_public_url(config, backup)
+            public_url = s3_client.generate_public_url(config, backup)
             body.append(f"- {backup} ({public_url})")
     
     # Create the email message
@@ -100,7 +100,7 @@ def send_backup_report(config, project):
     ]
     
     # Get list of backups
-    backups = r2_client.list_backups_sigv4(config, project)
+    backups = s3_client.list_backups_sigv4(config, project)
     
     # Filter out any non-matching files 
     relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
@@ -121,7 +121,7 @@ def send_backup_report(config, project):
             date_str = date_match.group(1) if date_match else "Unknown date"
             
             # Generate public URL
-            public_url = r2_client.generate_public_url(config, backup)
+            public_url = s3_client.generate_public_url(config, backup)
             
             body.append(f"- {date_str}: {backup}")
             body.append(f"  URL: {public_url}")

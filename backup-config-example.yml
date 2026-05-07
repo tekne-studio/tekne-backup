@@ -1,10 +1,18 @@
-# Cloudflare R2 configuration
-r2:
-  endpoint: "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+# Object storage configuration (S3-compatible).
+# Works with Cloudflare R2, Hetzner Object Storage, AWS S3, MinIO, etc.
+#
+# Provider hints:
+#   - Cloudflare R2:  region="auto",  addressing_style="path"
+#   - Hetzner:        region="fsn1" (or nbg1/hel1), addressing_style="virtual"
+#   - AWS S3:         region="us-east-1" (etc.), addressing_style="virtual"
+storage:
+  endpoint: "https://fsn1.your-objectstorage.com"
   access_key: "YOUR_ACCESS_KEY"
   secret_key: "YOUR_SECRET_KEY"
   bucket: "your-backup-bucket"
-  # Optional: public domain if you've configured a custom domain for your R2 bucket
+  region: "fsn1"
+  addressing_style: "virtual"
+  # Optional: public domain if you've configured a custom domain
   # public_domain: "backups.example.com"
   # Optional: upload settings for network issues
   upload_retries: 3 # Number of retries for failed uploads

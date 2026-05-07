@@ -24,7 +24,7 @@ import re
 from tekne_backup import utils
 from tekne_backup import config_loader
 from tekne_backup import backup_manager
-from tekne_backup import r2_client
+from tekne_backup import s3_client
 from tekne_backup import notification_manager
 
 # Default configuration file path - use script directory
@@ -36,7 +36,7 @@ def display_backups(config, project):
     utils.log(f"Listing backups for project: {project}")
     
     # Get list of backups
-    backups = r2_client.list_backups_sigv4(config, project)
+    backups = s3_client.list_backups_sigv4(config, project)
     
     # Log all backups found for debugging
     utils.log(f"Raw backup list: {backups}")
@@ -83,7 +83,7 @@ def display_backups(config, project):
         date_str = date_match.group(1) if date_match else "Unknown date"
         
         # Generate public URL
-        public_url = r2_client.generate_public_url(config, backup)
+        public_url = s3_client.generate_public_url(config, backup)
         
         # Print formatted output
         print(f"{backup:<{max_length + 2}} {date_str}  {public_url}")

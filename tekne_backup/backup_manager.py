@@ -4,7 +4,7 @@ import subprocess
 import shutil
 import re
 from . import utils
-from . import r2_client
+from . import s3_client
 
 def create_backup(config, project, project_config):
     """Create a backup for the specified project"""
@@ -140,7 +140,7 @@ def create_backup(config, project, project_config):
         r2_key = f"{project}/{backup_filename}.zip"
         utils.log(f"Uploading to R2: {r2_key}")
         
-        upload_success = r2_client.upload_to_r2_sigv4(config, zip_file, r2_key)
+        upload_success = s3_client.upload_to_r2_sigv4(config, zip_file, r2_key)
         
         # Clean up temporary directory
         shutil.rmtree(backup_dir)
@@ -184,7 +184,7 @@ def cleanup_backups(config, project):
     utils.log(f"Cutoff time: {cutoff_date.strftime('%Y-%m-%d--%H-%M')}")
     
     # Get all backups for this project
-    backups = r2_client.list_backups_sigv4(config, project)
+    backups = s3_client.list_backups_sigv4(config, project)
     relevant_backups = [b for b in backups if b.startswith(f"{project}/")]
     
     if not relevant_backups:
@@ -238,7 +238,7 @@ def cleanup_backups(config, project):
         # Check if backup is older than retention period
         if backup_timestamp < cutoff_timestamp:
             utils.log(f"Deleting old backup: {backup}")
-            if r2_client.delete_from_r2_sigv4(config, backup):
+            if s3_client.delete_from_r2_sigv4(config, backup):
                 deleted_count += 1
         else:
             utils.log(f"Keeping recent backup: {backup}")
