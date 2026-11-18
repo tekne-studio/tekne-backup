@@ -1,5 +1,7 @@
 # Tekne Backup
 
+> **This repository is archived.** Its work lives in [tekne-bkp](https://github.com/tekne-studio/tekne-bkp): restic backups with history and monitoring, and a zip of the site for its owner, with signed download links by email. Use tekne-bkp for a new site.
+
 Python utility for website backups to S3-compatible object storage (Cloudflare R2, Hetzner Object Storage, etc.).
 
 ## Features
